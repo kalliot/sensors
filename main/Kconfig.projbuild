@@ -1,0 +1,19 @@
+menu "Example Configuration"
+
+    config BROKER_URL
+        string "Broker URL"
+        default "mqtt://mqtt.eclipseprojects.io"
+        help
+            URL of the broker to connect to
+
+    config CLIENTID_PREFIX
+        string "Prefix to be added to clientid"
+        default "clientid"
+        help
+            last 6 chars will come from mac address
+
+    config BROKER_URL_FROM_STDIN
+        bool
+        default y if BROKER_URL = "FROM_STDIN"
+
+endmenu
