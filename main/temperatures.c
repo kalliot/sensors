@@ -18,9 +18,12 @@
 #include "mqtt_client.h"
 #include "sensors.h"
 
+// one gpio can handle max 8 onewire sensors.
+#define MAX_SENSORS 8
+
 static int tempSensorCnt;
 static uint8_t *chipid;
-static DeviceAddress tempSensors[8];
+static DeviceAddress tempSensors[MAX_SENSORS];
 static char temperatureTopic[64];
 
 static struct oneWireSensor {
@@ -30,17 +33,30 @@ static struct oneWireSensor {
 } *sensors;            
 
 
+static bool isDuplicate(DeviceAddress addr, int currentCnt)
+{
+    for (int i = 0; i < currentCnt; i++)
+    {
+        if (!memcmp(tempSensors[i],addr,sizeof(DeviceAddress)))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 static int temp_getaddresses(DeviceAddress *tempSensorAddresses) {
 	unsigned int numberFound = 0;
     
     reset_search();
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < MAX_SENSORS * 3; i++) // average 3 retries for each sensor.
     {
         gpio_set_level(BLINK_GPIO, true);
         printf("searching address %d ", numberFound);
         if (search(tempSensorAddresses[numberFound], true))
         {
-            if (numberFound > 0 && !memcmp(tempSensorAddresses[numberFound-1],tempSensorAddresses[numberFound],8))
+            if (numberFound > 0 && isDuplicate(tempSensorAddresses[numberFound], numberFound))
             {
                 printf("duplicate address, rejecting\n");
             }
@@ -51,7 +67,7 @@ static int temp_getaddresses(DeviceAddress *tempSensorAddresses) {
             }
         }
         gpio_set_level(BLINK_GPIO, false);
-        if (numberFound == 2)
+        if (numberFound == MAX_SENSORS)
         {
             return numberFound;
         }
