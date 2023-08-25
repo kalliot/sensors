@@ -38,7 +38,7 @@
 #define STATEINPUT_GPIO 33
 #define STATEINPUT_GPIO2 32
 #define STATISTICS_INTERVAL 1800
-#define PROGRAM_VERSION 0.12
+#define PROGRAM_VERSION 0.13
 
 // globals
 QueueHandle_t evt_queue = NULL;
@@ -125,6 +125,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             counter_restart(interval);
             flash_write("interval", interval);
             flash_commitchanges();
+            cJSON_Delete(root);
         }
         break;
 
@@ -196,14 +197,15 @@ static void sendInfo(esp_mqtt_client_handle_t client, uint8_t *chipid)
 
     sprintf(infoTopic,"%s%x%x%x/info",
          CONFIG_CLIENTID_PREFIX,chipid[3],chipid[4],chipid[5]);
-
-    sprintf(jsondata, "{\"dev\":\"%x%x%x\",\"id\":\"info\",\"memfree\":%d,\"idfversion\":\"%s\",\"progversion\":%.2f}", 
+    sprintf(jsondata, "{\"dev\":\"%x%x%x\",\"id\":\"info\",\"memfree\":%d,\"idfversion\":\"%s\",\"progversion\":%.2f, \"tempsensors\":[%s]}",
                 chipid[3],chipid[4],chipid[5],
                 esp_get_free_heap_size(),
                 esp_get_idf_version(),
-                PROGRAM_VERSION);
+                PROGRAM_VERSION,
+                temperatures_info());
     esp_mqtt_client_publish(client, infoTopic, jsondata , 0, 0, 1);
     sendcnt++;
+    printf("sending info\n");
     gpio_set_level(BLINK_GPIO, false);
 }
 
