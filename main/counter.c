@@ -103,7 +103,7 @@ void counter_restart(uint16_t frequency)
     ESP_ERROR_CHECK(esp_timer_restart(periodic_timer, interval * 1000000)); // microseconds
 }
 
-void counter_init(uint8_t *chip, uint16_t frequency)
+void counter_init(char *prefix, uint8_t *chip, uint16_t frequency)
 {
     pcnt_unit_config_t unit_config = {
         .high_limit = PCNT_HIGH_LIMIT,
@@ -138,7 +138,7 @@ void counter_init(uint8_t *chip, uint16_t frequency)
 
     initavg(60 / interval);
     sprintf(dataTopic,"%s%x%x%x/parameters/counter/%d",
-        CONFIG_CLIENTID_PREFIX,chipid[3],chipid[4],chipid[5],COUNTER_GPIO);
+        prefix, chipid[3],chipid[4],chipid[5],COUNTER_GPIO);
     printf("dataTopic=[%s]\n", dataTopic);
 
     const esp_timer_create_args_t periodic_timer_args = {

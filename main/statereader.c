@@ -10,9 +10,6 @@
 #include "statereader.h"
 
 
-#define ESP_INTR_FLAG_DEFAULT 0
-
-
 static struct stateInstance
 {
     int gpio;
@@ -66,12 +63,12 @@ void stateread_init(uint8_t *chip, int amount)
         instances[i].prevState = false;
         instances[i].xSemaphore = xSemaphoreCreateBinary();
     }
-    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+    //gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
     printf("statereader init done\n");
 }
 
 
-bool stateread_start(int index, int gpio)
+bool stateread_start(char *prefix, int index, int gpio)
 {
     printf("statereader start index %d, gpio %d\n",index, gpio);
     if (index < instance_count) {
@@ -84,7 +81,7 @@ bool stateread_start(int index, int gpio)
         gpio_set_intr_type(gpio, GPIO_INTR_ANYEDGE);
         gpio_isr_handler_add(gpio, gpio_isr_handler, (void*) instance);
         sprintf(instance->topic,"%s%x%x%x/parameters/state/%d",
-            CONFIG_CLIENTID_PREFIX,chipid[3],chipid[4],chipid[5],gpio);
+            prefix, chipid[3],chipid[4],chipid[5],gpio);
         printf("statereader start done\n");
         return true;
     }

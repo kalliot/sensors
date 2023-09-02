@@ -15,7 +15,9 @@
 #include "esp_mac.h"
 #include "driver/gpio.h"
 #include "esp_wifi_types.h"
+#include "freertos/event_groups.h"
 #include "protocol_examples_common.h"
+
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -33,14 +35,45 @@
 #include "temperatures.h"
 #include "flashmem.h"
 #include "mqtt_client.h"
+#include "apwebserver/server.h"
+#include "factoryreset.h"
+
+extern esp_err_t example_wifi_sta_do_connect(wifi_config_t wifi_config, bool wait);
+extern void example_wifi_start(void);
 
 #define TEMP_BUS 25
 #define STATEINPUT_GPIO 33
 #define STATEINPUT_GPIO2 32
 #define STATISTICS_INTERVAL 1800
 #define PROGRAM_VERSION 0.13
+#define ESP_INTR_FLAG_DEFAULT 0
+
+
+#if CONFIG_EXAMPLE_WIFI_SCAN_METHOD_FAST
+#define EXAMPLE_WIFI_SCAN_METHOD WIFI_FAST_SCAN
+#elif CONFIG_EXAMPLE_WIFI_SCAN_METHOD_ALL_CHANNEL
+#define EXAMPLE_WIFI_SCAN_METHOD WIFI_ALL_CHANNEL_SCAN
+#endif
+
+#if CONFIG_EXAMPLE_WIFI_CONNECT_AP_BY_SIGNAL
+#define EXAMPLE_WIFI_CONNECT_AP_SORT_METHOD WIFI_CONNECT_AP_BY_SIGNAL
+#elif CONFIG_EXAMPLE_WIFI_CONNECT_AP_BY_SECURITY
+#define EXAMPLE_WIFI_CONNECT_AP_SORT_METHOD WIFI_CONNECT_AP_BY_SECURITY
+#endif
+
+
+struct netinfo {
+    char *ssid;
+    char *password;
+    char *mqtt_server;
+    char *mqtt_port;
+    char *mqtt_prefix;
+};
+
 
 // globals
+
+struct netinfo *comminfo;
 QueueHandle_t evt_queue = NULL;
 char jsondata[256];
 uint16_t sendcnt = 0;
@@ -54,6 +87,8 @@ static char statisticsTopic[64];
 static char readTopic[64];
 static time_t started;
 static uint16_t maxQElements = 0;
+
+
 
 
 static void sendStatistics(esp_mqtt_client_handle_t client, uint8_t *chipid, time_t now);
@@ -146,7 +181,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 }
 
 
-
 static void sntp_start()
 {
     sntp_setoperatingmode(SNTP_OPMODE_POLL);
@@ -196,7 +230,7 @@ static void sendInfo(esp_mqtt_client_handle_t client, uint8_t *chipid)
     char infoTopic[32];
 
     sprintf(infoTopic,"%s%x%x%x/info",
-         CONFIG_CLIENTID_PREFIX,chipid[3],chipid[4],chipid[5]);
+         comminfo->mqtt_prefix, chipid[3],chipid[4],chipid[5]);
     sprintf(jsondata, "{\"dev\":\"%x%x%x\",\"id\":\"info\",\"memfree\":%d,\"idfversion\":\"%s\",\"progversion\":%.2f, \"tempsensors\":[%s]}",
                 chipid[3],chipid[4],chipid[5],
                 esp_get_free_heap_size(),
@@ -215,7 +249,7 @@ static void sendSetup(esp_mqtt_client_handle_t client, uint8_t *chipid)
 
     char setupTopic[32];
     sprintf(setupTopic,"%s%x%x%x/setup",
-         CONFIG_CLIENTID_PREFIX,chipid[3],chipid[4],chipid[5]);
+         comminfo->mqtt_prefix, chipid[3],chipid[4],chipid[5]);
 
     sprintf(jsondata, "{\"dev\":\"%x%x%x\",\"id\":\"setup\",\"interval\":%d }",
                 chipid[3],chipid[4],chipid[5],
@@ -228,13 +262,15 @@ static void sendSetup(esp_mqtt_client_handle_t client, uint8_t *chipid)
 static esp_mqtt_client_handle_t mqtt_app_start(uint8_t *chipid)
 {
     char client_id[128];
+    char uri[64];
     
     sprintf(client_id,"client_id=%s%x%x%x",
-        CONFIG_CLIENTID_PREFIX,chipid[3],chipid[4],chipid[5]);
+        comminfo->mqtt_prefix ,chipid[3],chipid[4],chipid[5]);
+    sprintf(uri,"mqtt://%s:%s",comminfo->mqtt_server, comminfo->mqtt_port);
 
     printf("built client id=[%s]",client_id);
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = CONFIG_BROKER_URL,
+        .broker.address.uri = uri,
         .credentials.client_id = client_id
     };
     esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
@@ -245,11 +281,48 @@ static esp_mqtt_client_handle_t mqtt_app_start(uint8_t *chipid)
 }
 
 
+esp_err_t wifi_connect(char *ssid, char *password)
+{
+    ESP_LOGI(TAG, "Start example_connect.");
+    example_wifi_start();
+    wifi_config_t wifi_config = {
+        .sta = {
+            .scan_method = EXAMPLE_WIFI_SCAN_METHOD,
+            .sort_method = EXAMPLE_WIFI_CONNECT_AP_SORT_METHOD,
+            .threshold.rssi = CONFIG_EXAMPLE_WIFI_SCAN_RSSI_THRESHOLD,
+            .threshold.authmode = WIFI_AUTH_OPEN,
+        },
+    };
+
+    memset(wifi_config.sta.ssid, 0, sizeof(wifi_config.sta.ssid));
+    strncpy((char*)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
+    memset(wifi_config.sta.password, 0, sizeof(wifi_config.sta.password));
+    strncpy((char*)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+    return example_wifi_sta_do_connect(wifi_config, true);
+}
+
+
+struct netinfo *get_networkinfo()
+{
+    static struct netinfo ni;
+    char *default_ssid = "XXXXXXXX";
+
+    ni.ssid = flash_read_str("ssid",default_ssid, 20);
+    if (!strcmp(ni.ssid,"XXXXXXXX"))
+        return NULL;
+
+    ni.password    = flash_read_str("password","pass", 20);
+    ni.mqtt_server = flash_read_str("mqtt_server","eclipseprojects.io", 20);
+    ni.mqtt_port   = flash_read_str("mqtt_port","1883", 6);
+    ni.mqtt_prefix = flash_read_str("mqtt_prefix","home/esp", 20);
+    return &ni;
+}
+
+
 void app_main(void)
 {
     uint8_t chipid[8];
     time_t now, prevStatsTs;
-    //int tempSensorCnt;
     esp_efuse_mac_get_default(chipid);
 
     ESP_LOGI(TAG, "[APP] Startup..");
@@ -267,88 +340,94 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-
-    flash_open("storage");
-    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
-     * Read "Establishing Wi-Fi or Ethernet Connection" section in
-     * examples/protocols/README.md for more information about this function.
-     */
-    ESP_ERROR_CHECK(example_connect());
-
     gpio_reset_pin(BLINK_GPIO);
     gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
 
-    evt_queue = xQueueCreate(10, sizeof(struct measurement));
-    counter_init(chipid, flash_read("interval", 10));
-    temperatures_init(TEMP_BUS, chipid);
-
-    esp_mqtt_client_handle_t client = mqtt_app_start(chipid);
-    sntp_start();
-    ESP_LOGI(TAG, "[APP] All init done, app_main, last line.");
-
-    sprintf(statisticsTopic,"%s%x%x%x/statistics",
-         CONFIG_CLIENTID_PREFIX,chipid[3],chipid[4],chipid[5]);
-    printf("statisticsTopic=[%s]\n", statisticsTopic);
-
-    sprintf(readTopic,"%s%x%x%x/setsetup",
-         CONFIG_CLIENTID_PREFIX,chipid[3],chipid[4],chipid[5]);
-
-    //sendInfo(client, chipid);
-    stateread_init(chipid, 2);
-    stateread_start(0, STATEINPUT_GPIO);
-    stateread_start(1, STATEINPUT_GPIO2);
-    // it is very propable, we will not get correct timestamp here.
-    // It takes some time to get correct timestamp from ntp.
-    time(&started);
-    prevStatsTs = now = started;
-
-    sendStatistics(client, chipid, now);
-
-    while (1)
+    flash_open("storage");
+    comminfo = get_networkinfo();
+    if (comminfo == NULL)
     {
-        struct measurement meas;
-        // send statistics after 4 hours, if nothing happens.
-        // this is typical if we have only slow changing state sensor
+        gpio_set_level(BLINK_GPIO, true);
+        server_init();
+        gpio_set_level(BLINK_GPIO, false);
+    }
+    else
+    {
+        gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+        factoryreset_init();
+        wifi_connect(comminfo->ssid, comminfo->password);
+        evt_queue = xQueueCreate(10, sizeof(struct measurement));
+        counter_init(comminfo->mqtt_prefix, chipid, flash_read("interval", 10));
+        temperatures_init(TEMP_BUS, chipid);
 
-        if(xQueueReceive(evt_queue, &meas, STATISTICS_INTERVAL * 1000 / portTICK_PERIOD_MS)) {
-            time(&now);
-            uint16_t qcnt = uxQueueMessagesWaiting(evt_queue);
-            if (started < MIN_EPOCH)
-            {
-                prevStatsTs = started = now;
-                sendStatistics(client, chipid , now);
+        esp_mqtt_client_handle_t client = mqtt_app_start(chipid);
+        sntp_start();
+        ESP_LOGI(TAG, "[APP] All init done, app_main, last line.");
+
+        sprintf(statisticsTopic,"%s%x%x%x/statistics",
+            comminfo->mqtt_prefix, chipid[3],chipid[4],chipid[5]);
+        printf("statisticsTopic=[%s]\n", statisticsTopic);
+
+        sprintf(readTopic,"%s%x%x%x/setsetup",
+            comminfo->mqtt_prefix, chipid[3],chipid[4],chipid[5]);
+
+        //sendInfo(client, chipid);
+        stateread_init(chipid, 2);
+        stateread_start(comminfo->mqtt_prefix, 0, STATEINPUT_GPIO);
+        stateread_start(comminfo->mqtt_prefix, 1, STATEINPUT_GPIO2);
+        // it is very propable, we will not get correct timestamp here.
+        // It takes some time to get correct timestamp from ntp.
+        time(&started);
+        prevStatsTs = now = started;
+
+        sendStatistics(client, chipid, now);
+
+        while (1)
+        {
+            struct measurement meas;
+            // send statistics after 4 hours, if nothing happens.
+            // this is typical if we have only slow changing state sensor
+
+            if(xQueueReceive(evt_queue, &meas, STATISTICS_INTERVAL * 1000 / portTICK_PERIOD_MS)) {
+                time(&now);
+                uint16_t qcnt = uxQueueMessagesWaiting(evt_queue);
+                if (started < MIN_EPOCH)
+                {
+                    prevStatsTs = started = now;
+                    sendStatistics(client, chipid , now);
+                }
+                if (qcnt > maxQElements)
+                {
+                    maxQElements = qcnt;
+                }
+                if (now - prevStatsTs >= STATISTICS_INTERVAL) {
+                    sendStatistics(client, chipid, now);
+                    prevStatsTs = now;
+                }
+                switch (meas.id) {
+                    case COUNT:
+                        counter_send(meas.data.count, client);
+                    break;
+
+                    case TEMPERATURE:
+                        temperature_send(comminfo->mqtt_prefix, &meas, client);
+                    break;
+
+                    case STATE:
+                        stateread_send(&meas, client);
+                    break;
+
+                    default:
+                        printf("unknown data type\n" );
+                }
             }
-            if (qcnt > maxQElements)
-            {
-                maxQElements = qcnt;
-            }
-            if (now - prevStatsTs >= STATISTICS_INTERVAL) {
+            else
+            {   // timeout
+                printf("timeout\n");
+                time(&now);
                 sendStatistics(client, chipid, now);
                 prevStatsTs = now;
             }
-            switch (meas.id) {
-                case COUNT:
-                    counter_send(meas.data.count, client);
-                break;
-
-                case TEMPERATURE:
-                    temperature_send(&meas, client);
-                break;
-
-                case STATE:
-                    stateread_send(&meas, client);
-                break;
-
-                default:
-                    printf("unknown data type\n" );
-            }
-        }
-        else
-        {   // timeout
-            printf("timeout\n");
-            time(&now);
-            sendStatistics(client, chipid, now);
-            prevStatsTs = now;
         }
     }
 }
