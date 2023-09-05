@@ -127,8 +127,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         printf("subscribing topic %s\n", readTopic);
         msg_id = esp_mqtt_client_subscribe(client, readTopic, 0);
         ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
+        gpio_set_level(MQTTSTATUS_GPIO, true);
         sendInfo(client, (uint8_t *) handler_args);
-        // implement counter setup publish to counter module.
         sendSetup(client, (uint8_t *) handler_args);
         connectcnt++;
         break;
@@ -136,6 +136,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
         disconnectcnt++;
+        gpio_set_level(MQTTSTATUS_GPIO, false);
         break;
 
     case MQTT_EVENT_SUBSCRIBED:
@@ -294,6 +295,7 @@ static void wifi_event_handler(void *event_handler_arg, esp_event_base_t event_b
     else if (event_id == WIFI_EVENT_STA_DISCONNECTED)
     {
         printf("WiFi lost connection\n");
+        gpio_set_level(WLANSTATUS_GPIO, false);
         if(retry_num < WIFI_RECONNECT_RETRYCNT){
             esp_wifi_connect();
             retry_num++;
@@ -303,6 +305,7 @@ static void wifi_event_handler(void *event_handler_arg, esp_event_base_t event_b
     else if (event_id == IP_EVENT_STA_GOT_IP)
     {
         printf("Wifi got IP\n");
+        gpio_set_level(WLANSTATUS_GPIO, true);
         retry_num = 0;
     }
 }
@@ -371,15 +374,20 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     gpio_reset_pin(BLINK_GPIO);
+    gpio_reset_pin(WLANSTATUS_GPIO);
+    gpio_reset_pin(SETUP_GPIO);
+    gpio_reset_pin(MQTTSTATUS_GPIO);
     gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_direction(WLANSTATUS_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_direction(SETUP_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_direction(MQTTSTATUS_GPIO, GPIO_MODE_OUTPUT);
 
     flash_open("storage");
     comminfo = get_networkinfo();
     if (comminfo == NULL)
     {
-        gpio_set_level(BLINK_GPIO, true);
+        gpio_set_level(SETUP_GPIO, true);
         server_init();
-        gpio_set_level(BLINK_GPIO, false);
     }
     else
     {

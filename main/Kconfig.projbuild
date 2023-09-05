@@ -1,5 +1,26 @@
 menu "Sensors Configuration"
 
+    config SETUPLED_GPIO
+        int "Setup led gpio"
+        range 0 36
+        default 12
+        help
+            This led is lit when config web ap server is active.
+
+    config WLANSTATUS_GPIO
+        int "Wlan status led gpio"
+        range 0 36
+        default 14
+        help
+            This led is lit when wlan is connected.
+
+    config MQTTSTATUS_GPIO
+        int "MQTT status led gpio"
+        range 0 36
+        default 13
+        help
+            This led is lit when mqtt is in connected state.
+
     config ESP_WIFI_SSID
         string "WiFi SSID"
         default "myssid"
