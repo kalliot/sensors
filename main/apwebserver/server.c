@@ -20,9 +20,9 @@
 #include "sensors.h"
 
 
-#define EXAMPLE_ESP_WIFI_SSID      CONFIG_ESP_WIFI_SSID
-#define EXAMPLE_ESP_WIFI_PASS      CONFIG_ESP_WIFI_PASSWORD
-#define EXAMPLE_MAX_STA_CONN       CONFIG_ESP_MAX_STA_CONN
+#define ESP_WIFI_SSID      CONFIG_ESP_WIFI_SSID
+#define ESP_WIFI_PASS      CONFIG_ESP_WIFI_PASSWORD
+#define MAX_STA_CONN       CONFIG_ESP_MAX_STA_CONN
 
 
 static const char *TAG = "wifi_AP_WEBserver";
@@ -174,12 +174,12 @@ static esp_err_t form_get_handler(httpd_req_t *req)
 
 
 static const httpd_uri_t form = {
-    .uri       = "/form",
+    .uri       = "/",
     .method    = HTTP_GET,
     .handler   = form_get_handler,
     .user_ctx  = "<html>"
-                 "<body><table>"
-                 "<form action=\"/form\" method=\"get\">"
+                 "<body style=\"background-color:dimgray;\" style=\"color:white;\"><table>"
+                 "<form action=\"/\" method=\"get\">"
                  "<tr><td>wlan ssid:</td><td><input type=\"text\" name=\"ssid\"></input></td></tr>"
                  "<tr><td>wlan password:</td><td><input type=\"text\" name=\"password\"></input></td></tr>"
                  "<tr><td>mqtt server:</td><td><input type=\"text\" value=\"test.mosquitto.org\" name=\"mqtt_server\"></input></td></tr>"
@@ -191,12 +191,9 @@ static const httpd_uri_t form = {
 
 esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
 {
-    if (strcmp("/hello", req->uri) == 0) {
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "/hello URI is not available");
+    if (strcmp("/", req->uri) == 0) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "/ URI is not available");
         return ESP_OK;
-    } else if (strcmp("/echo", req->uri) == 0) {
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "/echo URI is not available");
-        return ESP_FAIL;
     }
     httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Some 404 error message");
     return ESP_FAIL;
@@ -272,14 +269,14 @@ static esp_err_t wifi_init_softap(void)
 
     wifi_config_t wifi_config = {
         .ap = {
-            .ssid = EXAMPLE_ESP_WIFI_SSID,
-            .ssid_len = strlen(EXAMPLE_ESP_WIFI_SSID),
-            .password = EXAMPLE_ESP_WIFI_PASS,
-            .max_connection = EXAMPLE_MAX_STA_CONN,
+            .ssid = ESP_WIFI_SSID,
+            .ssid_len = strlen(ESP_WIFI_SSID),
+            .password = ESP_WIFI_PASS,
+            .max_connection = MAX_STA_CONN,
             .authmode = WIFI_AUTH_WPA_WPA2_PSK
         },
     };
-    if (strlen(EXAMPLE_ESP_WIFI_PASS) == 0) {
+    if (strlen(ESP_WIFI_PASS) == 0) {
         wifi_config.ap.authmode = WIFI_AUTH_OPEN;
     }
 
@@ -288,7 +285,7 @@ static esp_err_t wifi_init_softap(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s",
-             EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+             ESP_WIFI_SSID, ESP_WIFI_PASS);
     return ESP_OK;
 }
 

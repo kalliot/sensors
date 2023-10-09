@@ -44,7 +44,7 @@ extern void example_wifi_start(void);
 #define STATEINPUT_GPIO 33
 #define STATEINPUT_GPIO2 32
 #define STATISTICS_INTERVAL 1800
-#define PROGRAM_VERSION 0.13
+#define PROGRAM_VERSION 0.14
 #define ESP_INTR_FLAG_DEFAULT 0
 
 
@@ -345,7 +345,7 @@ struct netinfo *get_networkinfo()
         return NULL;
 
     ni.password    = flash_read_str("password","pass", 20);
-    ni.mqtt_server = flash_read_str("mqtt_server","eclipseprojects.io", 20);
+    ni.mqtt_server = flash_read_str("mqtt_server","test.mosquitto.org", 20);
     ni.mqtt_port   = flash_read_str("mqtt_port","1883", 6);
     ni.mqtt_prefix = flash_read_str("mqtt_prefix","home/esp", 20);
     return &ni;
@@ -418,7 +418,7 @@ void app_main(void)
         prevStatsTs = now = started;
 
         sendStatistics(client, chipid, now);
-
+        printf("gpios: mqtt=%d wlan=%d\n",MQTTSTATUS_GPIO,WLANSTATUS_GPIO);
         while (1)
         {
             struct measurement meas;
