@@ -21,6 +21,7 @@
 // one gpio can handle max 8 onewire sensors.
 #define MAX_SENSORS 8
 #define SENSOR_NAMELEN 17
+#define NO_CHANGE_INTERVAL 900
 
 static int tempSensorCnt;
 static uint8_t *chipid;
@@ -31,6 +32,7 @@ static char *noInfo = "\0";
 
 static struct oneWireSensor {
     float prev;
+    time_t prevsend;
     char sensorname[SENSOR_NAMELEN];
     DeviceAddress *addr;
 } *sensors;            
@@ -156,13 +158,15 @@ static void temp_reader(void* arg)
     int delay = 10000 - (tempSensorCnt) * DELAY_BETWEEN_SENSORS;
     int retry=0;
     float temperature;
+    time_t now;
 
-    for(time_t now = 0; now < 1650000000; time(&now))
+    for(time_t now = 0; now < MIN_EPOCH; time(&now))
     {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
     for(;;) {
+        time(&now);
         ds18b20_requestTemperatures();
         for (int i=0; i < tempSensorCnt;) {
             vTaskDelay(DELAY_BETWEEN_SENSORS / portTICK_PERIOD_MS); 
@@ -180,7 +184,7 @@ static void temp_reader(void* arg)
             }
             else
             {
-                if (diff >= 0.2)
+                if ((diff) >= 0.2 || ((now - sensors[i].prevsend) > NO_CHANGE_INTERVAL))
                 {
                     struct measurement meas;
                     meas.id = TEMPERATURE;
@@ -188,6 +192,7 @@ static void temp_reader(void* arg)
                     meas.data.temperature = temperature;
                     xQueueSend(evt_queue, &meas, 0);
                     sensors[i].prev = temperature;
+                    sensors[i].prevsend = now;
                 }
                 i++;
             }
@@ -214,6 +219,7 @@ bool temperatures_init(int gpio, uint8_t *chip)
     for (int i=0;i<tempSensorCnt;i++) {
         sensors[i].addr = &tempSensors[i]; 
         sensors[i].prev = 0.0;
+        sensors[i].prevsend = 0;
         sensors[i].sensorname[0]='\0';
         for (int j = 0; j < 8; j++) {
             sprintf(buff,"%x",tempSensors[i][j]);
