@@ -5,9 +5,11 @@
 #include "driver/gpio.h"
 #include "flashmem.h"
 #include "factoryreset.h"
+#include "esp_log.h"
 
 static int reset_gpio = 23;
 static SemaphoreHandle_t xSemaphore;
+static const char *TAG = "FACTORYRESET";
 
 static void IRAM_ATTR gpio_isr_handler()
 {
@@ -22,7 +24,7 @@ static void reset_reader(void *arg)
             if (gpio_get_level(reset_gpio) == 0) {
                 flash_erase_all();
                 flash_commitchanges();
-                printf("**** restarting ****\n");
+                ESP_LOGI(TAG,"**** restarting ****");
                 vTaskDelay(200 / portTICK_PERIOD_MS); 
                 esp_restart();
             }
@@ -33,7 +35,7 @@ static void reset_reader(void *arg)
 
 void factoryreset_init()
 {
-    printf("factoryreset init ...\n");
+    ESP_LOGI(TAG,"factoryreset init.");
     
     xSemaphore = xSemaphoreCreateBinary();
     gpio_reset_pin(reset_gpio);
@@ -43,5 +45,5 @@ void factoryreset_init()
     gpio_set_intr_type(reset_gpio, GPIO_INTR_ANYEDGE);
     gpio_isr_handler_add(reset_gpio, gpio_isr_handler, NULL);
 
-    printf("factoryreset init done\n");
+    ESP_LOGI(TAG,"factoryreset init done");
 }

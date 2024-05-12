@@ -6,7 +6,8 @@
 #include "freertos/semphr.h"
 #include "driver/gpio.h"
 #include "soc/frc_timer_reg.h"
-#include "sensors.h"
+#include "esp_log.h"
+#include "homeapp.h"
 #include "statereader.h"
 
 
@@ -22,6 +23,7 @@ static struct stateInstance
 
 static uint8_t *chipid;
 static int instance_count;
+static const char *TAG = "STATEREADER";
 
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
@@ -53,7 +55,7 @@ static void state_reader(void *arg)
 
 void stateread_init(uint8_t *chip, int amount)
 {
-    printf("statereader init ...\n");
+    ESP_LOGI(TAG,"statereader init");
     chipid = chip;
     instance_count = amount;
     instances = malloc(sizeof(struct stateInstance) * amount);
@@ -64,13 +66,13 @@ void stateread_init(uint8_t *chip, int amount)
         instances[i].xSemaphore = xSemaphoreCreateBinary();
     }
     //gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
-    printf("statereader init done\n");
+    ESP_LOGI(TAG,"statereader init done");
 }
 
 
 bool stateread_start(char *prefix, int index, int gpio)
 {
-    printf("statereader start index %d, gpio %d\n",index, gpio);
+    ESP_LOGI(TAG,"statereader start index %d, gpio %d",index, gpio);
     if (index < instance_count) {
         struct stateInstance *instance = &instances[index];
 
@@ -80,12 +82,12 @@ bool stateread_start(char *prefix, int index, int gpio)
         gpio_set_direction(gpio, GPIO_MODE_INPUT);
         gpio_set_intr_type(gpio, GPIO_INTR_ANYEDGE);
         gpio_isr_handler_add(gpio, gpio_isr_handler, (void*) instance);
-        sprintf(instance->topic,"%s%x%x%x/parameters/state/%d",
+        sprintf(instance->topic,"%s/sensors/%x%x%x/parameters/state/%d",
             prefix, chipid[3],chipid[4],chipid[5],gpio);
-        printf("statereader start done\n");
+        ESP_LOGI(TAG,"statereader start done");
         return true;
     }
-    printf("too big instance number given, max is %d\n", instance_count -1);
+    ESP_LOGD(TAG,"too big instance number given, max is %d", instance_count -1);
     return false;
 }
 
@@ -108,7 +110,7 @@ void stateread_send(struct measurement *meas, esp_mqtt_client_handle_t client)
     struct stateInstance *inst = find_instance_by_gpio(meas->gpio);
 
     if (inst == NULL) {
-        printf("gpio %d not found from instances\n", meas->gpio);
+        ESP_LOGD(TAG,"gpio %d not found from instances", meas->gpio);
         return;
     }
     gpio_set_level(BLINK_GPIO, true);

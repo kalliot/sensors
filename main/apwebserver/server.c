@@ -17,7 +17,7 @@
 #include "flashmem.h"
 #include "driver/gpio.h"
 #include "server.h"
-#include "sensors.h"
+#include "homeapp.h"
 
 
 #define ESP_WIFI_SSID      CONFIG_ESP_WIFI_SSID

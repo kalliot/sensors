@@ -10,17 +10,18 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
+#include "esp_log.h"
 
 #include "esp_timer.h"
 #include "driver/gpio.h"
 #include "freertos/queue.h"
 #include "mqtt_client.h"
-#include "sensors.h"
+#include "homeapp.h"
 #include "driver/pulse_cnt.h"
 #include "counter.h"
 
 #define PCNT_HIGH_LIMIT 0x7fff
-
+static const char *TAG = "COUNTER";
 
 static struct {
     int maxcnt;
@@ -47,6 +48,7 @@ static void initavg(int max)
     memset(avgs.samples,0,sizeof(int) * max);
     avgs.maxcnt = max;
 }
+
 
 static void addavg(int sample)
 {
@@ -137,16 +139,16 @@ void counter_init(char *prefix, uint8_t *chip, uint16_t frequency)
     pcnt_unit_start(pcnt_unit);
 
     initavg(60 / interval);
-    sprintf(dataTopic,"%s%x%x%x/parameters/counter/%d",
+    sprintf(dataTopic,"%s/sensors/%x%x%x/parameters/counter/%d",
         prefix, chipid[3],chipid[4],chipid[5],COUNTER_GPIO);
-    printf("dataTopic=[%s]\n", dataTopic);
+    ESP_LOGI(TAG,"dataTopic=[%s]", dataTopic);
 
     const esp_timer_create_args_t periodic_timer_args = {
            .callback = &periodic_timer_callback,
            .name = "periodic"
     };
 
-    printf("creating timer\n");
+    ESP_LOGD(TAG,"creating timer");
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, interval * 1000000)); // microseconds
 }
@@ -169,8 +171,6 @@ void counter_send(int ticks, esp_mqtt_client_handle_t client)
     combined = (avg << 16);
     combined += ticks;
 
-    printf("ticks since last %d, avg %d\n",ticks, avg);
-
     // combined and prevTicks are using both counter and average for
     // comparison of changes.
     if (combined != prevTicks) {
@@ -179,7 +179,7 @@ void counter_send(int ticks, esp_mqtt_client_handle_t client)
 
         char *datafmt = "{\"dev\":\"%x%x%x\",\"sensor\":%d,\"id\":\"counter\",\"value\":%d,\"avg1min\":%d,\"ts\":%jd,\"unit\":\"count\"}";
         if (prevSendTs && prevSendTs < (now - interval)) {
-            printf("sending extra message for prev 10 sec timestamp\n");
+            ESP_LOGI(TAG,"sending extra message for prev 10 sec timestamp");
             sprintf(jsondata, datafmt, 
                         chipid[3],chipid[4],chipid[5],
                         COUNTER_GPIO,

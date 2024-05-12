@@ -1,11 +1,12 @@
-#ifndef __SENSORS__
-#define __SENSORS__
+#ifndef __HOMEAPP__
+#define __HOMEAPP__
 
 enum meastype
 {
     COUNT,
     TEMPERATURE,
-    STATE
+    STATE,
+    OTA
 };
 
 struct measurement {
