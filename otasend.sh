@@ -21,5 +21,5 @@ cd srv/ota
 put build/sensors.bin $FNAME
 EOF
 # mqtt message is a signal for the running esp prog, to start ota update.
-mosquitto_pub -h 192.168.101.231 -t home/kallio/sensors/277998/otaupdate -m $message
+mosquitto_pub -h 192.168.101.231 -t home/kallio/sensors/5bcae4/otaupdate -m $message
 echo 'DONE'

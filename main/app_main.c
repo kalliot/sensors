@@ -181,10 +181,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         ESP_LOGI(TAG, "sent subscribe %s successful, msg_id=%d", otaUpdateTopic, msg_id);
 
         gpio_set_level(MQTTSTATUS_GPIO, true);
-        sendInfo(client, (uint8_t *) handler_args);
-        sendSetup(client, (uint8_t *) handler_args);
         isConnected = true;
         connectcnt++;
+        sendInfo(client, (uint8_t *) handler_args);
+        sendSetup(client, (uint8_t *) handler_args);
         break;
 
     case MQTT_EVENT_DISCONNECTED:

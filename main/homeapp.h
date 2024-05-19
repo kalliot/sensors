@@ -1,6 +1,8 @@
 #ifndef __HOMEAPP__
 #define __HOMEAPP__
 
+#include "freertos/queue.h"
+
 enum meastype
 {
     COUNT,
