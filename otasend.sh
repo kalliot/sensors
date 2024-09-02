@@ -8,6 +8,8 @@
 
 # see also CONFIG_APP_PROJECT_VER and CONFIG_FIRMWARE_UPGRADE_URL
 # in sdkconfig.
+# fd9030 refrigerator
+# 5bcae4 boiler
 
 cat sdkconfig | grep 'CONFIG_APP_PROJECT_VER=' > vernum.tmp
 . ./vernum.tmp
@@ -21,5 +23,5 @@ cd srv/ota
 put build/sensors.bin $FNAME
 EOF
 # mqtt message is a signal for the running esp prog, to start ota update.
-mosquitto_pub -h 192.168.101.231 -t home/kallio/sensors/5bcae4/otaupdate -m $message
+mosquitto_pub -h 192.168.101.231 -t home/kallio/sensors/fd9030/otaupdate -m $message
 echo 'DONE'

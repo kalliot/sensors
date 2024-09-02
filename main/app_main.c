@@ -10,6 +10,7 @@
 #include "cJSON.h"
 #include "esp_wifi.h"
 #include "esp_system.h"
+#include "esp_app_desc.h"
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_mac.h"
@@ -32,9 +33,11 @@
 #include "statereader.h"
 #include "counter.h"
 #include "homeapp.h"
-#include "temperatures.h"
+#include "temperature/temperatures.h"
 #include "flashmem.h"
 #include "ota/ota.h"
+#include "device/device.h"
+#include "statistics/statistics.h"
 #include "mqtt_client.h"
 #include "apwebserver/server.h"
 #include "factoryreset.h"
@@ -45,6 +48,7 @@
 #define STATEINPUT_GPIO2 32
 #define STATISTICS_INTERVAL 1800
 #define ESP_INTR_FLAG_DEFAULT 0
+
 
 
 #if CONFIG_EXAMPLE_WIFI_SCAN_METHOD_FAST
@@ -61,6 +65,11 @@
 
 #define WIFI_RECONNECT_RETRYCNT 50
 
+#define HEALTHYFLAGS_WIFI 1
+#define HEALTHYFLAGS_MQTT 2
+#define HEALTHYFLAGS_TEMP 4
+#define HEALTHYFLAGS_NTP  8
+
 struct netinfo {
     char *ssid;
     char *password;
@@ -75,25 +84,20 @@ struct netinfo {
 struct netinfo *comminfo;
 QueueHandle_t evt_queue = NULL;
 char jsondata[256];
-uint16_t sendcnt = 0;
 
 static const char *TAG = "SENSORSET";
 static bool isConnected = false;
-static uint16_t connectcnt = 0;
-static uint16_t disconnectcnt = 0;
-uint16_t sensorerrors = 0;
+static uint8_t healthyflags = 0;
 
 static char statisticsTopic[64];
 static char readTopic[64];
 static char otaUpdateTopic[64];
-static time_t started;
-static uint16_t maxQElements = 0;
 static int retry_num = 0;
 static char *program_version = "";
+static char appname[20];
 
 
 
-static void sendStatistics(esp_mqtt_client_handle_t client, uint8_t *chipid, time_t now);
 static void sendSetup(esp_mqtt_client_handle_t client, uint8_t *chipid);
 static void sendInfo(esp_mqtt_client_handle_t client, uint8_t *chipid);
 
@@ -121,6 +125,22 @@ static void log_error_if_nonzero(const char *message, int error_code)
     }
 }
 
+static void sensorFriendlyName(cJSON *root)
+{
+    char *sensorname;
+    char *friendlyname;
+
+    sensorname   = getJsonStr(root, "sensor");
+    friendlyname = getJsonStr(root, "name");
+    if (temperature_set_friendlyname(sensorname, friendlyname))
+    {
+        ESP_LOGD(TAG, "writing sensor %s, friendlyname %s to flash",sensorname, friendlyname);
+        flash_write_str(sensorname,friendlyname);
+        flash_commitchanges();
+    }
+}
+
+
 static bool handleJson(esp_mqtt_event_handle_t event)
 {
     cJSON *root = cJSON_Parse(event->data);
@@ -139,7 +159,7 @@ static bool handleJson(esp_mqtt_event_handle_t event)
             ota_start(fname);
         }
     }
-    else if (!strcmp(id,"setup"))
+    else if (!strcmp(id,"counter"))
     {
         uint16_t interval = cJSON_GetObjectItem(root,"interval")->valueint;
         counter_restart(interval);
@@ -147,6 +167,12 @@ static bool handleJson(esp_mqtt_event_handle_t event)
         flash_commitchanges();
         ret = true;
     }
+    else if (!strcmp(id,"sensorfriendlyname"))
+    {
+        sensorFriendlyName(root);
+        ret = true;
+    }
+
     cJSON_Delete(root);
     return ret;
 }
@@ -182,14 +208,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
         gpio_set_level(MQTTSTATUS_GPIO, true);
         isConnected = true;
-        connectcnt++;
+        device_sendstatus(client, comminfo->mqtt_prefix, appname, (uint8_t *) handler_args);
         sendInfo(client, (uint8_t *) handler_args);
         sendSetup(client, (uint8_t *) handler_args);
+        statistics_getptr()->connectcnt++;
+        healthyflags |= HEALTHYFLAGS_MQTT;
         break;
 
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
-        disconnectcnt++;
+        statistics_getptr()->disconnectcnt++;
         isConnected = false;
         gpio_set_level(MQTTSTATUS_GPIO, false);
         break;
@@ -226,11 +254,24 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 }
 
 
+void sntp_callback(struct timeval *tv)
+{
+    (void) tv;
+    static bool firstSyncDone = false;
+
+    if (!firstSyncDone)
+    {
+        firstSyncDone = true;
+        healthyflags |= HEALTHYFLAGS_NTP;
+    }
+}
+
 static void sntp_start()
 {
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, "pool.ntp.org");
     esp_sntp_init();
+    sntp_set_time_sync_notification_cb(sntp_callback);
 }
 
 
@@ -244,30 +285,6 @@ int getWifiStrength(void)
 }
 
 
-//{"dev":"277998","id":"statistics","connectcnt":6,"disconnectcnt":399,"sendcnt":20186,"sensorerrors":81,"ts":1679761328}
-
-static void sendStatistics(esp_mqtt_client_handle_t client, uint8_t *chipid, time_t now)
-{
-    if (now < MIN_EPOCH || started < MIN_EPOCH) return;
-    gpio_set_level(BLINK_GPIO, true);
-
-    static char *datafmt = "{\"dev\":\"%x%x%x\",\"id\":\"statistics\",\"connectcnt\":%d,\"disconnectcnt\":%d,\"sendcnt\":%d,\"sensorerrors\":%d, \"max_queued\":%d,\"ts\":%jd,\"started\":%jd,\"rssi\":%d}";
-    
-    sprintf(jsondata, datafmt, 
-                chipid[3],chipid[4],chipid[5],
-                connectcnt,
-                disconnectcnt,
-                sendcnt,
-                sensorerrors,
-                maxQElements,
-                now,
-                started,
-                getWifiStrength());
-    esp_mqtt_client_publish(client, statisticsTopic, jsondata , 0, 0, 1);
-    sendcnt++;
-    gpio_set_level(BLINK_GPIO, false);
-}
-
 static void sendInfo(esp_mqtt_client_handle_t client, uint8_t *chipid)
 {
     gpio_set_level(BLINK_GPIO, true);
@@ -276,16 +293,16 @@ static void sendInfo(esp_mqtt_client_handle_t client, uint8_t *chipid)
 
     sprintf(infoTopic,"%s/sensors/%x%x%x/info",
          comminfo->mqtt_prefix, chipid[3],chipid[4],chipid[5]);
-    sprintf(jsondata, "{\"dev\":\"%x%x%x\",\"id\":\"info\",\"memfree\":%d,\"idfversion\":\"%s\",\"progversion\":%s, \"tempsensors\":[%s]}",
+    sprintf(jsondata, "{\"dev\":\"%x%x%x\",\"id\":\"info\",\"memfree\":%d,\"idfversion\":\"%s\",\"progversion\":%s}",
                 chipid[3],chipid[4],chipid[5],
                 esp_get_free_heap_size(),
                 esp_get_idf_version(),
-                program_version,
-                temperatures_info());
+                program_version);
     esp_mqtt_client_publish(client, infoTopic, jsondata , 0, 0, 1);
-    sendcnt++;
+    statistics_getptr()->sendcnt++;
     gpio_set_level(BLINK_GPIO, false);
 }
+
 
 static void sendSetup(esp_mqtt_client_handle_t client, uint8_t *chipid)
 {
@@ -299,7 +316,7 @@ static void sendSetup(esp_mqtt_client_handle_t client, uint8_t *chipid)
                 chipid[3],chipid[4],chipid[5],
                 counter_getinterval());
     esp_mqtt_client_publish(client, setupTopic, jsondata , 0, 0, 1);
-    sendcnt++;
+    statistics_getptr()->sendcnt++;
     gpio_set_level(BLINK_GPIO, false);
 }
 
@@ -307,6 +324,7 @@ static esp_mqtt_client_handle_t mqtt_app_start(uint8_t *chipid)
 {
     char client_id[128];
     char uri[64];
+    char deviceTopic[42];
     
     sprintf(client_id,"client_id=%s%x%x%x",
         comminfo->mqtt_prefix ,chipid[3],chipid[4],chipid[5]);
@@ -315,7 +333,12 @@ static esp_mqtt_client_handle_t mqtt_app_start(uint8_t *chipid)
     ESP_LOGI(TAG,"built client id=[%s]",client_id);
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = uri,
-        .credentials.client_id = client_id
+        .credentials.client_id = client_id,
+        .session.last_will.topic = device_topic(comminfo->mqtt_prefix, deviceTopic, chipid),
+        .session.last_will.msg = device_data(jsondata, chipid, appname, 0),
+        .session.last_will.msg_len = strlen(jsondata),
+        .session.last_will.qos = 0,
+        .session.last_will.retain = 1
     };
     esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
     /* The last argument may be used to pass data to the event handler, in this example mqtt_event_handler */
@@ -326,30 +349,33 @@ static esp_mqtt_client_handle_t mqtt_app_start(uint8_t *chipid)
 
 static void wifi_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id,void *event_data)
 {
-    if(event_id == WIFI_EVENT_STA_START)
+    switch (event_id)
     {
-        ESP_LOGI(TAG,"WIFI CONNECTING");
-    }
-    else if (event_id == WIFI_EVENT_STA_CONNECTED)
-    {
-        ESP_LOGI(TAG,"WiFi CONNECTED");
-    }
-    else if (event_id == WIFI_EVENT_STA_DISCONNECTED)
-    {
-        ESP_LOGI(TAG,"WiFi lost connection");
-        gpio_set_level(WLANSTATUS_GPIO, false);
-        if(retry_num < WIFI_RECONNECT_RETRYCNT){
-            esp_wifi_connect();
-            retry_num++;
-            ESP_LOGI(TAG,"Retrying to Connect");
-        }
-    }
-    else if (event_id == IP_EVENT_STA_GOT_IP)
-    {
-        ESP_LOGI(TAG,"Wifi got IP\n");
-        gpio_set_level(WLANSTATUS_GPIO, true);
-        retry_num = 0;
-        ota_cancel_rollback();
+        case WIFI_EVENT_STA_START:
+            ESP_LOGI(TAG,"WIFI CONNECTING");
+        break;
+
+        case WIFI_EVENT_STA_CONNECTED:
+            ESP_LOGI(TAG,"WiFi CONNECTED");
+        break;
+
+        case WIFI_EVENT_STA_DISCONNECTED:
+            ESP_LOGI(TAG,"WiFi lost connection");
+            gpio_set_level(WLANSTATUS_GPIO, false);
+            if(retry_num < WIFI_RECONNECT_RETRYCNT)
+            {
+                esp_wifi_connect();
+                retry_num++;
+                ESP_LOGI(TAG,"Retrying to Connect");
+            }
+        break;
+
+        case IP_EVENT_STA_GOT_IP:
+            ESP_LOGI(TAG,"Wifi got IP\n");
+            gpio_set_level(WLANSTATUS_GPIO, true);
+            retry_num = 0;
+            healthyflags |= HEALTHYFLAGS_WIFI;
+        break;
     }
 }
 
@@ -395,6 +421,13 @@ struct netinfo *get_networkinfo()
 }
 
 
+static void get_appname(void)
+{
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    strncpy(appname,app_desc->project_name,20);
+}
+
+
 void app_main(void)
 {
     uint8_t chipid[8];
@@ -425,6 +458,7 @@ void app_main(void)
     gpio_set_direction(SETUP_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_direction(MQTTSTATUS_GPIO, GPIO_MODE_OUTPUT);
 
+    get_appname();
     flash_open("storage");
     comminfo = get_networkinfo();
     if (comminfo == NULL)
@@ -439,7 +473,27 @@ void app_main(void)
         wifi_connect(comminfo->ssid, comminfo->password);
         evt_queue = xQueueCreate(10, sizeof(struct measurement));
         counter_init(comminfo->mqtt_prefix, chipid, flash_read("interval", 10));
-        temperatures_init(TEMP_BUS, chipid);
+        int sensorcnt = temperature_init(TEMP_BUS, appname, chipid, 8);
+        if (sensorcnt)
+        {
+            char *sensoraddr;
+            char *friendlyname;
+
+            for (int i = 0; i < sensorcnt; i++)
+            {
+                sensoraddr   = temperature_getsensor(i);
+                if (sensoraddr == NULL) break;
+                friendlyname = flash_read_str(sensoraddr, sensoraddr, 20);
+                if (strcmp(friendlyname, sensoraddr))
+                {
+                    if (!temperature_set_friendlyname(sensoraddr, friendlyname))
+                    {
+                        ESP_LOGD(TAG, "Set friendlyname for %s failed", sensoraddr);
+                    }
+                    free(friendlyname); // flash_read_str does dynamic allocation
+                }
+            }
+        }
 
         esp_mqtt_client_handle_t client = mqtt_app_start(chipid);
         sntp_start();
@@ -455,54 +509,72 @@ void app_main(void)
         sprintf(readTopic,"%s/sensors/%x%x%x/setsetup",
             comminfo->mqtt_prefix, chipid[3],chipid[4],chipid[5]);
 
+        prevStatsTs = 0;
         program_version = ota_init(comminfo->mqtt_prefix, "sensors", chipid);
         stateread_init(chipid, 2);
+        if (!statistics_init(comminfo->mqtt_prefix, appname, chipid))
+        {
+            ESP_LOGE(TAG,"failed in statistics init");
+        }
         stateread_start(comminfo->mqtt_prefix, 0, STATEINPUT_GPIO);
         stateread_start(comminfo->mqtt_prefix, 1, STATEINPUT_GPIO2);
-        // it is very propable, we will not get correct timestamp here.
-        // It takes some time to get correct timestamp from ntp.
-        time(&started);
-        prevStatsTs = now = started;
 
-        ESP_LOGI(TAG, "gpios: mqtt=%d wlan=%d",MQTTSTATUS_GPIO,WLANSTATUS_GPIO);
+        ESP_LOGI(TAG, "gpios: mqtt=%d wlan=%d", MQTTSTATUS_GPIO, WLANSTATUS_GPIO);
         while (1)
         {
             struct measurement meas;
-            // send statistics after 4 hours, if nothing happens.
-            // this is typical if we have only slow changing state sensor
+
+            time(&now);
+            if ((now - statistics_getptr()->started > 20) &&
+                (healthyflags == (HEALTHYFLAGS_WIFI | HEALTHYFLAGS_MQTT | HEALTHYFLAGS_NTP | HEALTHYFLAGS_TEMP)))
+            {
+                ota_cancel_rollback();
+            }
+
+            if (now > MIN_EPOCH)
+            {
+                if (statistics_getptr()->started < MIN_EPOCH)
+                {
+                    statistics_getptr()->started = now;
+                }
+                if (now - prevStatsTs >= STATISTICS_INTERVAL)
+                {
+                    if (isConnected)
+                    {
+                        statistics_send(client);
+                        prevStatsTs = now;
+                    }
+                }
+            }
 
             if(xQueueReceive(evt_queue, &meas, STATISTICS_INTERVAL * 1000 / portTICK_PERIOD_MS)) {
                 time(&now);
                 uint16_t qcnt = uxQueueMessagesWaiting(evt_queue);
-                if (started < MIN_EPOCH)
+                if (qcnt > statistics_getptr()->maxQElements)
                 {
-                    prevStatsTs = started = now;
-                    if (isConnected) sendStatistics(client, chipid , now);
+                    statistics_getptr()->maxQElements = qcnt;
                 }
-                if (qcnt > maxQElements)
-                {
-                    maxQElements = qcnt;
-                }
-                if (now - prevStatsTs >= STATISTICS_INTERVAL) {
-                    if (isConnected) sendStatistics(client, chipid, now);
-                    prevStatsTs = now;
-                }
+
                 switch (meas.id) {
                     case COUNT:
                         if (isConnected) counter_send(meas.data.count, client);
                     break;
 
                     case TEMPERATURE:
+                        healthyflags |= HEALTHYFLAGS_TEMP;
                         if (isConnected) temperature_send(comminfo->mqtt_prefix, &meas, client);
                     break;
 
                     case STATE:
-                        if (isConnected) stateread_send(&meas, client);
+                        if (isConnected)
+                        {
+                            stateread_send(&meas, client);
+                            statistics_getptr()->sendcnt++;
+                        }
                     break;
 
                     case OTA:
                         ota_status_publish(&meas, client);
-                        sendcnt++;
                     break;
 
                     default:
@@ -512,9 +584,6 @@ void app_main(void)
             else
             {   // timeout
                 ESP_LOGI(TAG,"timeout");
-                time(&now);
-                if (isConnected) sendStatistics(client, chipid, now);
-                prevStatsTs = now;
             }
         }
     }

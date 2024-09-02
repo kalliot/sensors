@@ -128,7 +128,6 @@ void stateread_send(struct measurement *meas, esp_mqtt_client_handle_t client)
             now,
             duration);
     esp_mqtt_client_publish(client, inst->topic, jsondata , 0, 0, 1);
-    sendcnt++;
     inst->prevState = meas->data.state;
     inst->prevStateTs = now;
     gpio_set_level(BLINK_GPIO, false);

@@ -2,3 +2,5 @@ build/
 main/build/
 server_certs/
 sdkconfig
+vernum.tmp
+sdkconfig.old

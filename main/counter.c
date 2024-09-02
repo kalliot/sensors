@@ -17,6 +17,7 @@
 #include "freertos/queue.h"
 #include "mqtt_client.h"
 #include "homeapp.h"
+#include "statistics/statistics.h"
 #include "driver/pulse_cnt.h"
 #include "counter.h"
 
@@ -187,7 +188,7 @@ void counter_send(int ticks, esp_mqtt_client_handle_t client)
                         avg,
                         now - interval);
             esp_mqtt_client_publish(client, dataTopic, jsondata , 0, 0, 1);
-            sendcnt++;
+            statistics_getptr()->sendcnt++;
         }    
         
         
@@ -198,7 +199,7 @@ void counter_send(int ticks, esp_mqtt_client_handle_t client)
                     avg,
                     now);
         esp_mqtt_client_publish(client, dataTopic, jsondata , 0, 0, 1);
-        sendcnt++;
+        statistics_getptr()->sendcnt++;
         prevSendTs = now;
         
         gpio_set_level(BLINK_GPIO, false);
