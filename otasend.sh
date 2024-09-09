@@ -16,12 +16,12 @@ cat sdkconfig | grep 'CONFIG_APP_PROJECT_VER=' > vernum.tmp
 echo $CONFIG_APP_PROJECT_VER
 FNAME="sensors_$CONFIG_APP_PROJECT_VER"
 echo $FNAME
-message='{"dev":"5bdddc","id":"otaupdate","file":'\"${FNAME}\"'}'
+message='{"dev":"5bcae4","id":"otaupdate","file":'\"${FNAME}\"'}'
 echo $message
 sftp pi@192.168.101.233 << EOF
 cd srv/ota
 put build/sensors.bin $FNAME
 EOF
 # mqtt message is a signal for the running esp prog, to start ota update.
-mosquitto_pub -h 192.168.101.231 -t home/kallio/sensors/fd9030/otaupdate -m $message
+mosquitto_pub -h 192.168.101.231 -t home/kallio/sensors/5bcae4/otaupdate -m $message
 echo 'DONE'

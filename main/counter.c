@@ -155,14 +155,11 @@ void counter_init(char *prefix, uint8_t *chip, uint16_t frequency)
 }
 
 
-
-// home/kallio/clientA2601F/counter { "id":"clientA2601F","ts":1212023203233","value":56,"unit":"count"}
-// to watts was count * 36
-
 void counter_send(int ticks, esp_mqtt_client_handle_t client)
 {
     time_t now;
     static time_t prevSendTs = 0;
+    static bool init = true;
     uint16_t avg;
     uint32_t combined = 0;
 
@@ -174,7 +171,8 @@ void counter_send(int ticks, esp_mqtt_client_handle_t client)
 
     // combined and prevTicks are using both counter and average for
     // comparison of changes.
-    if (combined != prevTicks) {
+    if (init || combined != prevTicks) {
+        init = false;
         gpio_set_level(BLINK_GPIO, true);
         time(&now);
 

@@ -303,6 +303,21 @@ static void sendInfo(esp_mqtt_client_handle_t client, uint8_t *chipid)
     gpio_set_level(BLINK_GPIO, false);
 }
 
+static char *mkSetupTopic(char *item, char *buff, uint8_t *chipid, int id)
+{
+    if (id != -1)
+    {
+        sprintf(buff,"%s/%s/%x%x%x/setup/%s/%d",
+            comminfo->mqtt_prefix, appname, chipid[3],chipid[4],chipid[5], item, id);
+    }
+    else
+    {
+        sprintf(buff,"%s/%s/%x%x%x/setup/%s",
+            comminfo->mqtt_prefix, appname, chipid[3],chipid[4],chipid[5], item);
+    }
+    return buff;
+}
+
 
 static void sendSetup(esp_mqtt_client_handle_t client, uint8_t *chipid)
 {
@@ -317,6 +332,22 @@ static void sendSetup(esp_mqtt_client_handle_t client, uint8_t *chipid)
                 counter_getinterval());
     esp_mqtt_client_publish(client, setupTopic, jsondata , 0, 0, 1);
     statistics_getptr()->sendcnt++;
+
+    for (int i = 0; ; i++)
+    {
+        char *sensoraddr = temperature_getsensor(i);
+
+        if (sensoraddr == NULL) break;
+        sprintf(setupTopic,"%s/%s/%x%x%x/sensorfriendlyname/%s",
+            comminfo->mqtt_prefix, appname, chipid[3],chipid[4],chipid[5], sensoraddr);
+
+        sprintf(jsondata, "{\"dev\":\"%x%x%x\",\"id\":\"sensorfriendlyname\",\"sensor\":\"%s\",\"name\":\"%s\"}",
+                    chipid[3],chipid[4],chipid[5],
+                    sensoraddr, temperature_get_friendlyname(i));
+
+        esp_mqtt_client_publish(client, mkSetupTopic("sensorfriendlyname",setupTopic, chipid, i), jsondata , 0, 0, 1);
+        statistics_getptr()->sendcnt++;
+    }
     gpio_set_level(BLINK_GPIO, false);
 }
 

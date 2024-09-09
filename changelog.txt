@@ -1,3 +1,5 @@
 v 0.11 - info json, which displays version info. Counter interval can be changed in function level.
          Much improved state handling.
 v0.12 Started to read json setup variables. First with counter interval. Also using flash memory to store the interval.
+v0.17 Temperature friendlynames. Initial counter and state values are shown in
+startup.

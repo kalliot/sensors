@@ -32,21 +32,31 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
     xSemaphoreGive(instance->xSemaphore);
 }
 
+static void queue_message(struct stateInstance *instance, bool state)
+{
+    struct measurement meas;
+    meas.gpio = instance->gpio;
+    meas.id = STATE;
+    meas.data.state = state;
+    xQueueSendFromISR(evt_queue, &meas, NULL);
+    instance->prevState = state;
+}
+
+
 static void state_reader(void *arg)
 {
     struct stateInstance *instance = (struct stateInstance *) arg;
+    bool state;
+
+    state = !gpio_get_level(instance->gpio);
+    queue_message(instance, state);
 
     while (1) {
         if (xSemaphoreTake(instance->xSemaphore, portMAX_DELAY)) {
-            vTaskDelay(100 / portTICK_PERIOD_MS); // wait for all glitches
-            bool state = (gpio_get_level(instance->gpio) == 0);
+            vTaskDelay(50 / portTICK_PERIOD_MS); // wait for all glitches
+            state = !gpio_get_level(instance->gpio);
             if (state != instance->prevState) {
-                struct measurement meas;
-                meas.gpio = instance->gpio;
-                meas.id = STATE;
-                meas.data.state = state;
-                xQueueSendFromISR(evt_queue, &meas, NULL);
-                instance->prevState = state;
+                queue_message(instance, state);
             }
         } 
     }
@@ -78,12 +88,13 @@ bool stateread_start(char *prefix, int index, int gpio)
 
         instances[index].gpio = gpio;
         gpio_reset_pin(gpio);
-        xTaskCreate(state_reader, "state reader", 2048, (void*) instance, 10, NULL);
+        gpio_pullup_en(gpio);
         gpio_set_direction(gpio, GPIO_MODE_INPUT);
         gpio_set_intr_type(gpio, GPIO_INTR_ANYEDGE);
+        xTaskCreate(state_reader, "state reader", 2048, (void*) instance, 10, NULL);
         gpio_isr_handler_add(gpio, gpio_isr_handler, (void*) instance);
         sprintf(instance->topic,"%s/sensors/%x%x%x/parameters/state/%d",
-            prefix, chipid[3],chipid[4],chipid[5],gpio);
+            prefix, chipid[3],chipid[4],chipid[5], gpio);
         ESP_LOGI(TAG,"statereader start done");
         return true;
     }
@@ -105,6 +116,8 @@ void stateread_send(struct measurement *meas, esp_mqtt_client_handle_t client)
 {
     time_t now;
     int duration;
+    int retain;
+
     static char *datafmt = "{\"dev\":\"%x%x%x\",\"sensor\":%d,\"id\":\"state\",\"value\":%d,\"ts\":%jd,\"duration\":%d,\"unit\":\"bool\"}";
     
     struct stateInstance *inst = find_instance_by_gpio(meas->gpio);
@@ -115,19 +128,23 @@ void stateread_send(struct measurement *meas, esp_mqtt_client_handle_t client)
     }
     gpio_set_level(BLINK_GPIO, true);
     time(&now);
+    if (now < MIN_EPOCH)
+    {
+        now = 0;
+        retain = 0;
+    }
+    else retain = 1;
     if (inst->prevStateTs > MIN_EPOCH) {
         duration = now - inst->prevStateTs;
     }
-    else {
-        duration = 0;
-    }
+    else duration = 0;
     sprintf(jsondata, datafmt,
             chipid[3],chipid[4],chipid[5],
             meas->gpio,
             meas->data.state,
             now,
             duration);
-    esp_mqtt_client_publish(client, inst->topic, jsondata , 0, 0, 1);
+    esp_mqtt_client_publish(client, inst->topic, jsondata , 0, 0, retain);
     inst->prevState = meas->data.state;
     inst->prevStateTs = now;
     gpio_set_level(BLINK_GPIO, false);
