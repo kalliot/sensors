@@ -91,7 +91,7 @@ uint16_t flash_read(char *name, uint16_t def)
         break;
 
         case ESP_ERR_NVS_NOT_FOUND:
-            ESP_LOGI(TAG,"%s is not initialized yet!");
+            ESP_LOGI(TAG,"%s is not initialized yet!", name);
             ret = def;
         break;
 

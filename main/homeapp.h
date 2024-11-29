@@ -22,7 +22,7 @@ struct measurement {
 };
 
 extern QueueHandle_t evt_queue;
-extern char jsondata[256];
+extern char jsondata[];
 extern uint16_t sendcnt;
 extern uint16_t sensorerrors;
 
