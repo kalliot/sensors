@@ -1,0 +1,242 @@
+commit e7fc4de5cc2ea1189560bfeab1b0aa3d930ae42b
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Fri Nov 29 19:27:27 2024 +0200
+
+    Added tempsensors topic, where all the found sensors are listed. With this the removal of topics is easier.
+
+ changelog.txt   |   2 ++
+ main/app_main.c |  39 ++++++++------------
+ main/flashmem.c |   2 +-
+ main/homeapp.h  |   2 +-
+ otasend.sh      |  14 ++++----
+ otastatus.py    | 108 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 134 insertions(+), 33 deletions(-)
+
+commit c9a7133616934123b8d63548d0c96d987dafab39
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Mon Sep 9 20:38:54 2024 +0300
+
+    Temperature friendlynames. Initial counter and state values are shown in startup.
+
+ changelog.txt      |  2 ++
+ main/app_main.c    | 31 +++++++++++++++++++++++++++++++
+ main/counter.c     |  8 +++-----
+ main/statereader.c | 45 +++++++++++++++++++++++++++++++--------------
+ otasend.sh         |  4 ++--
+ 5 files changed, 69 insertions(+), 21 deletions(-)
+
+commit 2eb36dee711d0c2285316ea8a8d41e6c4f4a4560
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Mon Sep 2 08:55:18 2024 +0300
+
+    Friendlyname for each ds18b20 sensor. Added device info
+
+ .gitignore          |   2 +
+ main/CMakeLists.txt |   4 +-
+ main/app_main.c     | 245 ++++++++++++++++++++++++++++++++-------------------
+ main/counter.c      |   5 +-
+ main/device         |   1 +
+ main/statereader.c  |   1 -
+ main/statistics     |   1 +
+ main/temperature    |   1 +
+ main/temperatures.c | 249 ----------------------------------------------------
+ main/temperatures.h |  10 ---
+ otasend.sh          |   4 +-
+ 11 files changed, 170 insertions(+), 353 deletions(-)
+
+commit 059041278c1cff7217a4f4abbf8d54fd758edec2
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Sun May 19 07:44:08 2024 +0300
+
+    temperatures.c, fixed a sensor address bug. This caused some of the ds18b10 sensors to fail in read.
+
+ main/app_main.c     |  4 ++--
+ main/ds18b20.c      |  6 ++---
+ main/homeapp.h      |  2 ++
+ main/temperatures.c | 64 +++++++++++++++++++++++++++++++----------------------
+ otasend.sh          |  2 +-
+ 5 files changed, 46 insertions(+), 32 deletions(-)
+
+commit 9ce8709f5fbdeb051ef968d6475d5e8c959d049c
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Sun May 12 17:08:41 2024 +0300
+
+    Ota update.
+    Changed many printf's to ESP_LOGx calls.
+
+ .gitignore                    |   1 +
+ main/CMakeLists.txt           |   3 +-
+ main/Kconfig.projbuild        |  29 ++++++++
+ main/app_main.c               | 149 ++++++++++++++++++++++++++++--------------
+ main/apwebserver/server.c     |   2 +-
+ main/counter.c                |  16 ++---
+ main/factoryreset.c           |   8 ++-
+ main/flashmem.c               |  51 ++++++++-------
+ main/{sensors.h => homeapp.h} |   7 +-
+ main/ota                      |   1 +
+ main/statereader.c            |  18 ++---
+ main/statereader.h            |   2 +-
+ main/temperatures.c           |  23 +++----
+ main/temperatures.h           |   2 +-
+ otasend.sh                    |  25 +++++++
+ 15 files changed, 229 insertions(+), 108 deletions(-)
+
+commit cf7410bd1c6b901592bf3cefbb273e031de3583e
+Author: Teppo Kallio <kalliot@users.noreply.github.com>
+Date:   Mon Mar 18 19:19:36 2024 +0200
+
+    Update README.md
+
+ README.md | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+commit aefd237dcc8beebe607590db2fc119477715b872
+Author: Teppo Kallio <kalliot@users.noreply.github.com>
+Date:   Mon Mar 18 19:16:23 2024 +0200
+
+    Update README.md
+
+ README.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+commit 03f1fa28770aa152984f98817effbd316c517993
+Author: Teppo Kallio <kalliot@users.noreply.github.com>
+Date:   Mon Mar 18 19:15:41 2024 +0200
+
+    Update README.md
+    
+    Added one schematic diagram.
+
+ README.md | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+commit d9ace55b97de2fe83f0581849c759f8b6fac081c
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Mon Mar 18 19:10:57 2024 +0200
+
+    Added magnetic valve sensor amplifier schema.
+
+ images/mag_valve_sensor_amp.png | Bin 0 -> 29536 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+commit c079ab58e36345c1133b8fdcc186108010f91abd
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Mon Mar 4 20:09:05 2024 +0200
+
+    found a bug in temperature.c ( code using dallas sensor )
+
+ main/temperatures.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+commit 7d76825eff262ba70d3a9fbf80c887c59f0b1c50
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Fri Nov 3 19:39:53 2023 +0200
+
+    If not enough big change in temperature, send it anyway after timeout.
+
+ main/temperatures.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+commit 07b7940d92c3bb7b397ba7df27f44ceb210820be
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Mon Oct 9 20:37:29 2023 +0300
+
+    Clarified setup web interface.
+
+ main/app_main.c           |  6 +++---
+ main/apwebserver/server.c | 31 ++++++++++++++-----------------
+ 2 files changed, 17 insertions(+), 20 deletions(-)
+
+commit f1bff823c347b1e4d4d66b33b60679a4c55d90f5
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Tue Sep 5 20:31:08 2023 +0300
+
+    Three status leds added: Config mode, wlan connected state and mqtt connect state.
+
+ main/Kconfig.projbuild    | 21 +++++++++++++++++++++
+ main/app_main.c           | 14 +++++++++++---
+ main/apwebserver/server.c |  4 ++++
+ main/sensors.h            |  9 ++++++---
+ 4 files changed, 42 insertions(+), 6 deletions(-)
+
+commit 5846b3feaa4bf517bbe36174be98f548e2e87977
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Sun Sep 3 08:17:11 2023 +0300
+
+    Got rid of dependencies to example wifi stuff.
+
+ CMakeLists.txt  |  2 +-
+ main/app_main.c | 61 ++++++++++++++++++++++++++++++++++++++++++---------------
+ 2 files changed, 46 insertions(+), 17 deletions(-)
+
+commit f3b44e4c14a9b7be9b79fca8b455ab9bfd7a6d4d
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Sat Sep 2 10:43:49 2023 +0300
+
+    Using ap webserver for initial configuration.
+
+ main/CMakeLists.txt       |   2 +-
+ main/Kconfig.projbuild    |  32 +++--
+ main/app_main.c           | 239 ++++++++++++++++++++++++------------
+ main/apwebserver/server.c | 305 ++++++++++++++++++++++++++++++++++++++++++++++
+ main/apwebserver/server.h |   6 +
+ main/counter.c            |   4 +-
+ main/counter.h            |   2 +-
+ main/factoryreset.c       |  47 +++++++
+ main/factoryreset.h       |   6 +
+ main/flashmem.c           |  47 +++++++
+ main/flashmem.h           |   3 +
+ main/statereader.c        |   9 +-
+ main/statereader.h        |   2 +-
+ main/temperatures.c       |   4 +-
+ main/temperatures.h       |   2 +-
+ 15 files changed, 604 insertions(+), 106 deletions(-)
+
+commit 93db080fd05a5e0ce1a8070886b8237857e44864
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Fri Aug 25 08:17:43 2023 +0300
+
+    Info json contains ids of the found temperature sensors. Dont try to read temperatures before network time is acquired.
+
+ main/app_main.c     | 10 +++++----
+ main/temperatures.c | 65 ++++++++++++++++++++++++++++++++++++++++-------------
+ main/temperatures.h |  1 +
+ 3 files changed, 57 insertions(+), 19 deletions(-)
+
+commit 135b9fa9ccb0f3f103d91913e8e3ccbed39fff8d
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Tue Apr 25 09:20:20 2023 +0300
+
+    Fixed temperature bug. Now it is possible to have 8 sensors.
+
+ main/temperatures.c | 24 ++++++++++++++++++++----
+ 1 file changed, 20 insertions(+), 4 deletions(-)
+
+commit e8a7f073900f9baaf014bade270d5ac9370aa3f9
+Author: Teppo Kallio <teppo.ilari.kallio@gmail.com>
+Date:   Sun Apr 16 20:20:17 2023 +0300
+
+    Initial commit
+
+ .gitignore             |    3 +
+ CMakeLists.txt         |    9 +
+ README.md              |    3 +
+ changelog.txt          |    3 +
+ main/CMakeLists.txt    |    3 +
+ main/Kconfig.projbuild |   19 +
+ main/app_main.c        |  352 ++++++
+ main/cJSON.c           | 3119 ++++++++++++++++++++++++++++++++++++++++++++++++
+ main/cJSON.h           |  300 +++++
+ main/counter.c         |  208 ++++
+ main/counter.h         |   11 +
+ main/ds18b20.c         |  463 +++++++
+ main/ds18b20.h         |   85 ++
+ main/flashmem.c        |   65 +
+ main/flashmem.h        |   11 +
+ main/sensors.h         |   30 +
+ main/statereader.c     |  136 +++
+ main/statereader.h     |   11 +
+ main/temperatures.c    |  179 +++
+ main/temperatures.h    |    9 +
+ sdkconfig.ci           |   11 +
+ 21 files changed, 5030 insertions(+)

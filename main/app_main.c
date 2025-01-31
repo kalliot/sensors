@@ -96,6 +96,8 @@ static int retry_num = 0;
 static char *program_version = "";
 static char appname[20];
 
+nvs_handle setup_flash;
+
 
 
 static void sendSetup(esp_mqtt_client_handle_t client, uint8_t *chipid);
@@ -135,8 +137,8 @@ static void sensorFriendlyName(cJSON *root)
     if (temperature_set_friendlyname(sensorname, friendlyname))
     {
         ESP_LOGD(TAG, "writing sensor %s, friendlyname %s to flash",sensorname, friendlyname);
-        flash_write_str(sensorname,friendlyname);
-        flash_commitchanges();
+        flash_write_str(setup_flash, sensorname,friendlyname);
+        flash_commitchanges(setup_flash);
     }
 }
 
@@ -163,8 +165,8 @@ static bool handleJson(esp_mqtt_event_handle_t event)
     {
         uint16_t interval = cJSON_GetObjectItem(root,"interval")->valueint;
         counter_restart(interval);
-        flash_write("interval", interval);
-        flash_commitchanges();
+        flash_write(setup_flash, "interval", interval);
+        flash_commitchanges(setup_flash);
         ret = true;
     }
     else if (!strcmp(id,"sensorfriendlyname"))
@@ -429,17 +431,19 @@ struct netinfo *get_networkinfo()
     static struct netinfo ni;
     char *default_ssid = "XXXXXXXX";
 
-    ni.ssid = flash_read_str("ssid",default_ssid, 20);
+    nvs_handle wifi_flash = flash_open("wifisetup");
+    if (wifi_flash == -1) return NULL;
+
+    ni.ssid = flash_read_str(wifi_flash, "ssid",default_ssid, 20);
     if (!strcmp(ni.ssid,"XXXXXXXX"))
         return NULL;
 
-    ni.password    = flash_read_str("password","pass", 20);
-    ni.mqtt_server = flash_read_str("mqtt_server","test.mosquitto.org", 20);
-    ni.mqtt_port   = flash_read_str("mqtt_port","1883", 6);
-    ni.mqtt_prefix = flash_read_str("mqtt_prefix","home/esp", 20);
+    ni.password    = flash_read_str(wifi_flash, "password","pass", 20);
+    ni.mqtt_server = flash_read_str(wifi_flash, "mqtt_server","test.mosquitto.org", 20);
+    ni.mqtt_port   = flash_read_str(wifi_flash, "mqtt_port","1883", 6);
+    ni.mqtt_prefix = flash_read_str(wifi_flash, "mqtt_prefix","home/esp", 20);
     return &ni;
 }
-
 
 static void get_appname(void)
 {
@@ -478,21 +482,34 @@ void app_main(void)
     gpio_set_direction(SETUP_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_direction(MQTTSTATUS_GPIO, GPIO_MODE_OUTPUT);
 
+    // test leds first, these should blink on shortly in boot.
+    gpio_set_level(SETUP_GPIO, true);
+    gpio_set_level(WLANSTATUS_GPIO, true);
+    gpio_set_level(MQTTSTATUS_GPIO, true);
+
     get_appname();
-    flash_open("storage");
+
     comminfo = get_networkinfo();
+    vTaskDelay(50 / portTICK_PERIOD_MS); // short delay to let leds stay on a visible time.
     if (comminfo == NULL)
     {
-        gpio_set_level(SETUP_GPIO, true);
+        // SETUP_GPIO may stay on
+        gpio_set_level(WLANSTATUS_GPIO, false);
+        gpio_set_level(MQTTSTATUS_GPIO, false);
         server_init();
     }
     else
     {
+        setup_flash = flash_open("storage");
         gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
         factoryreset_init();
+        gpio_set_level(WLANSTATUS_GPIO, false);
+        gpio_set_level(MQTTSTATUS_GPIO, false);
+        gpio_set_level(SETUP_GPIO, false);
+
         wifi_connect(comminfo->ssid, comminfo->password);
         evt_queue = xQueueCreate(10, sizeof(struct measurement));
-        counter_init(comminfo->mqtt_prefix, chipid, flash_read("interval", 10));
+        counter_init(comminfo->mqtt_prefix, chipid, flash_read(setup_flash,"interval", 10));
         int sensorcnt = temperature_init(TEMP_BUS, appname, chipid, 8);
         if (sensorcnt)
         {
@@ -503,7 +520,7 @@ void app_main(void)
             {
                 sensoraddr   = temperature_getsensor(i);
                 if (sensoraddr == NULL) break;
-                friendlyname = flash_read_str(sensoraddr, sensoraddr, 20);
+                friendlyname = flash_read_str(setup_flash, sensoraddr, sensoraddr, 20);
                 if (strcmp(friendlyname, sensoraddr))
                 {
                     if (!temperature_set_friendlyname(sensoraddr, friendlyname))
