@@ -208,7 +208,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         msg_id = esp_mqtt_client_subscribe(client, otaUpdateTopic , 0);
         ESP_LOGI(TAG, "sent subscribe %s successful, msg_id=%d", otaUpdateTopic, msg_id);
 
-        gpio_set_level(MQTTSTATUS_GPIO, true);
+        gpio_set_level(MQTTSTATUS_GPIO, false);
         isConnected = true;
         device_sendstatus(client, comminfo->mqtt_prefix, appname, (uint8_t *) handler_args);
         sendInfo(client, (uint8_t *) handler_args);
@@ -221,7 +221,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
         statistics_getptr()->disconnectcnt++;
         isConnected = false;
-        gpio_set_level(MQTTSTATUS_GPIO, false);
+        gpio_set_level(MQTTSTATUS_GPIO, true);
         break;
 
     case MQTT_EVENT_SUBSCRIBED:
@@ -383,7 +383,7 @@ static void wifi_event_handler(void *event_handler_arg, esp_event_base_t event_b
 
         case WIFI_EVENT_STA_DISCONNECTED:
             ESP_LOGI(TAG,"WiFi lost connection");
-            gpio_set_level(WLANSTATUS_GPIO, false);
+            gpio_set_level(WLANSTATUS_GPIO, true);
             if(retry_num < WIFI_RECONNECT_RETRYCNT)
             {
                 esp_wifi_connect();
@@ -394,7 +394,7 @@ static void wifi_event_handler(void *event_handler_arg, esp_event_base_t event_b
 
         case IP_EVENT_STA_GOT_IP:
             ESP_LOGI(TAG,"Wifi got IP\n");
-            gpio_set_level(WLANSTATUS_GPIO, true);
+            gpio_set_level(WLANSTATUS_GPIO, false);
             retry_num = 0;
             healthyflags |= HEALTHYFLAGS_WIFI;
         break;
@@ -486,15 +486,15 @@ void app_main(void)
     gpio_set_level(SETUP_GPIO, true);
     gpio_set_level(WLANSTATUS_GPIO, true);
     gpio_set_level(MQTTSTATUS_GPIO, true);
-
+    gpio_set_level(BLINK_GPIO, true);
     get_appname();
 
     comminfo = get_networkinfo();
-    vTaskDelay(50 / portTICK_PERIOD_MS); // short delay to let leds stay on a visible time.
     if (comminfo == NULL)
     {
         // SETUP_GPIO may stay on
         gpio_set_level(WLANSTATUS_GPIO, false);
+        gpio_set_level(MQTTSTATUS_GPIO, false);
         gpio_set_level(MQTTSTATUS_GPIO, false);
         server_init();
     }
@@ -503,11 +503,9 @@ void app_main(void)
         setup_flash = flash_open("storage");
         gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
         factoryreset_init();
-        gpio_set_level(WLANSTATUS_GPIO, false);
-        gpio_set_level(MQTTSTATUS_GPIO, false);
-        gpio_set_level(SETUP_GPIO, false);
 
         wifi_connect(comminfo->ssid, comminfo->password);
+        esp_wifi_set_ps(WIFI_PS_NONE);
         evt_queue = xQueueCreate(10, sizeof(struct measurement));
         counter_init(comminfo->mqtt_prefix, chipid, flash_read(setup_flash,"interval", 10));
         int sensorcnt = temperature_init(TEMP_BUS, appname, chipid, 8);
@@ -557,6 +555,8 @@ void app_main(void)
         stateread_start(comminfo->mqtt_prefix, 1, STATEINPUT_GPIO2);
 
         ESP_LOGI(TAG, "gpios: mqtt=%d wlan=%d", MQTTSTATUS_GPIO, WLANSTATUS_GPIO);
+        gpio_set_level(SETUP_GPIO, false);
+
         while (1)
         {
             struct measurement meas;
