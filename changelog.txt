@@ -5,3 +5,5 @@ v0.17 Temperature friendlynames. Initial counter and state values are shown in
 startup.
 v0.19 Temperature sensors are all listed in tempsensors topic, not in their
 own topics. This makes topic cleanup easier.
+v0.23 Fixed a bug in info message. During otasend reply with error code.
+

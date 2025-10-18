@@ -4,26 +4,23 @@
 # openssl server running. It is starte with command
 # openssl s_server -WWW -key ca_key.pem -cert ca_cert.pem -port 8070
 # *.pem files are in same directory.
-# sensors_x.x.x.x is copied to servers ota subdirectory.
+# thermostat_x.x.x.x is copied to servers ota subdirectory.
 
 # see also CONFIG_APP_PROJECT_VER and CONFIG_FIRMWARE_UPGRADE_URL
 # in sdkconfig.
 
-# fd9030 refrigerator
-# 5bcae4 boiler
-# 5bc674 dev board
-# 277998 Sensors test box
-
-DEVICE="5bcae4"
-
-cat sdkconfig | grep 'CONFIG_APP_PROJECT_VER=' > vernum.tmp
+cat sdkconfig | grep CONFIG_APP_PROJECT_VER > vernum.tmp
 . ./vernum.tmp
+echo $CONFIG_APP_PROJECT_VER
 FNAME="sensors_$CONFIG_APP_PROJECT_VER"
 echo $FNAME
+message='{"id":"otafileschanged","name":'\"${FNAME}\"'}'
+echo $message
 sftp pi@192.168.101.233 << EOF
 cd srv/ota
 put build/sensors.bin $FNAME
 EOF
-
-FILESIZE="$(stat -c%s build/sensors.bin)"
-python otastatus.py $DEVICE $FNAME $FILESIZE
+# mqtt message is a signal for the running esp prog, to start ota update.
+mosquitto_pub -h 192.168.101.231 -t 'home/kallio/ota/fileschanged' -m $message
+#mosquitto_pub -h 192.168.101.231 -t home/kallio/sensors/5bcae4/otaupdate -m $message
+echo 'DONE'

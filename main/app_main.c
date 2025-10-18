@@ -295,7 +295,7 @@ static void sendInfo(esp_mqtt_client_handle_t client, uint8_t *chipid)
 
     sprintf(infoTopic,"%s/sensors/%x%x%x/info",
          comminfo->mqtt_prefix, chipid[3],chipid[4],chipid[5]);
-    sprintf(jsondata, "{\"dev\":\"%x%x%x\",\"id\":\"info\",\"memfree\":%d,\"idfversion\":\"%s\",\"progversion\":%s}",
+    sprintf(jsondata, "{\"dev\":\"%x%x%x\",\"id\":\"info\",\"memfree\":%d,\"idfversion\":\"%s\",\"progversion\":\"%s\"}",
                 chipid[3],chipid[4],chipid[5],
                 esp_get_free_heap_size(),
                 esp_get_idf_version(),
